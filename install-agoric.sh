@@ -54,14 +54,17 @@ yarn build
 # Install and build Agoric Cosmos SDK support
 cd packages/cosmic-swingset && make
 
+# find the non sudoer user
+if [ $SUDO_USER ]; then USER=$SUDO_USER; else USER=`whoami`; fi
 
 # network configuration
 curl https://testnet.agoric.net/network-config > chain.json
 chainName=`jq -r .chainName < chain.json`
+
 # Confirm value: should be something like agorictest-N.
 echo $chainName
 
-ag-chain-cosmos init --chain-id $chainName ${MONIKER}
+sudo -u $USER -s "$HOME/go/bin/ag-chain-cosmos" init --chain-id $chainName ${MONIKER}
 
 # fix configuration file
 # Set peers variable to the correct value
@@ -74,14 +77,11 @@ seeds=$(jq '.seeds | join(",")' < chain.json)
 sed -i.bak 's/^log_level/# log_level/' $HOME/.ag-chain-cosmos/config/config.toml
 # Replace the seeds and persistent_peers values
 sed -i.bak -e "s/^seeds *=.*/seeds = $seeds/; s/^persistent_peers *=.*/persistent_peers = $peers/" $HOME/.ag-chain-cosmos/config/config.toml
-# Fix `Error: failed to parse log level`
-sed -i.bak 's/^log_level/# log_level/' $HOME/.ag-chain-cosmos/config/config.toml
-# Replace the seeds and persistent_peers values
-sed -i.bak -e "s/^seeds *=.*/seeds = $seeds/; s/^persistent_peers *=.*/persistent_peers = $peers/" $HOME/.ag-chain-cosmos/config/config.toml
+
+# fix folder permission
+chown -R $USER:$USER $HOME
 
 # create unit file
-if [ $SUDO_USER ]; then USER=$SUDO_USER; else USER=`whoami`; fi
-
 tee <<EOF >/dev/null /etc/systemd/system/ag-chain-cosmos.service
 [Unit]
 Description=Agoric Cosmos daemon
@@ -108,7 +108,7 @@ systemctl start ag-chain-cosmos
 
 # confirm that the node is fully synced
 for (( ; ; )); do
-  sync_info=`sudo -u $USER "$HOME/go/bin/ag-cosmos-helper" status 2>&1 | jq .SyncInfo`
+  sync_info=`sudo -u $USER -s "$HOME/go/bin/ag-cosmos-helper" status 2>&1 | jq .SyncInfo`
   echo "$sync_info"
   if test `echo "$sync_info" | jq -r .catching_up` == false; then
     echo "Caught up"
