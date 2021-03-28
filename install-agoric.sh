@@ -68,10 +68,7 @@ ag-chain-cosmos init --chain-id $chainName ${MONIKER}
 peers=$(jq '.peers | join(",")' < chain.json)
 # Set seeds variable to the correct value.
 seeds=$(jq '.seeds | join(",")' < chain.json)
-# Set peers variable to the correct value
-peers=$(jq '.peers | join(",")' < chain.json)
-# Set seeds variable to the correct value.
-seeds=$(jq '.seeds | join(",")' < chain.json)
+
 
 # Fix `Error: failed to parse log level`
 sed -i.bak 's/^log_level/# log_level/' $HOME/.ag-chain-cosmos/config/config.toml
@@ -83,7 +80,8 @@ sed -i.bak 's/^log_level/# log_level/' $HOME/.ag-chain-cosmos/config/config.toml
 sed -i.bak -e "s/^seeds *=.*/seeds = $seeds/; s/^persistent_peers *=.*/persistent_peers = $peers/" $HOME/.ag-chain-cosmos/config/config.toml
 
 # create unit file
-USER=`whoami`
+if [ $SUDO_USER ]; then USER=$SUDO_USER; else USER=`whoami`; fi
+
 tee <<EOF >/dev/null /etc/systemd/system/ag-chain-cosmos.service
 [Unit]
 Description=Agoric Cosmos daemon
@@ -109,13 +107,14 @@ systemctl daemon-reload
 systemctl start ag-chain-cosmos
 
 # confirm that the node is fully synced
-while sleep 5; do
-  sync_info=`ag-cosmos-helper status 2>&1 | jq .SyncInfo`
+for (( ; ; )); do
+  sync_info=`sudo -u $USER "$HOME/go/bin/ag-cosmos-helper" status 2>&1 | jq .SyncInfo`
   echo "$sync_info"
   if test `echo "$sync_info" | jq -r .catching_up` == false; then
     echo "Caught up"
     break
   fi
+  sleep 5
 done
 
 # exit message
