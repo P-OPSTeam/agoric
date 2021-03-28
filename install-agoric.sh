@@ -10,29 +10,28 @@
 GIT_BRANCH=$1
 MONIKER=$2
 
-apt update
-apt install -y curl git jq
-
 # install nodejs
 # Download the nodesource PPA for Node.js
-curl https://deb.nodesource.com/setup_12.x | bash
+curl https://deb.nodesource.com/setup_12.x | sudo bash
 
 # Download the Yarn repository configuration
 # See instructions on https://legacy.yarnpkg.com/en/docs/install/
-curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | apt-key add -
-echo "deb https://dl.yarnpkg.com/debian/ stable main" | tee /etc/apt/sources.list.d/yarn.list
+curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | sudo apt-key add -
+echo "deb https://dl.yarnpkg.com/debian/ stable main" | sudo tee /etc/apt/sources.list.d/yarn.list
 
 # Update Ubuntu
-apt update
-apt upgrade -y
+sudo apt update
+sudo apt upgrade -y
+
+# make sure all tools used are installed
+sudo apt install -y curl git sed
 
 # Install Node.js, Yarn, and build tools
 # Install jq for formatting of JSON data
-apt install nodejs=12.* yarn build-essential jq -y
-
+sudo apt install nodejs=12.* yarn build-essential jq -y
 
 # Install correct Go version
-curl https://dl.google.com/go/go1.15.7.linux-amd64.tar.gz | tar -C/usr/local -zxvf -
+curl https://dl.google.com/go/go1.15.7.linux-amd64.tar.gz | sudo tar -C/usr/local -zxvf -
 
 # Update environment variables to include go
 cat <<'EOF' >>$HOME/.profile
@@ -64,7 +63,7 @@ chainName=`jq -r .chainName < chain.json`
 # Confirm value: should be something like agorictest-N.
 echo $chainName
 
-sudo -u $USER -s "$HOME/go/bin/ag-chain-cosmos" init --chain-id $chainName ${MONIKER}
+$HOME/go/bin/ag-chain-cosmos init --chain-id $chainName ${MONIKER}
 
 # fix configuration file
 # Set peers variable to the correct value
@@ -78,11 +77,8 @@ sed -i.bak 's/^log_level/# log_level/' $HOME/.ag-chain-cosmos/config/config.toml
 # Replace the seeds and persistent_peers values
 sed -i.bak -e "s/^seeds *=.*/seeds = $seeds/; s/^persistent_peers *=.*/persistent_peers = $peers/" $HOME/.ag-chain-cosmos/config/config.toml
 
-# fix folder permission
-chown -R $USER:$USER $HOME
-
 # create unit file
-tee <<EOF >/dev/null /etc/systemd/system/ag-chain-cosmos.service
+sudo tee <<EOF >/dev/null /etc/systemd/system/ag-chain-cosmos.service
 [Unit]
 Description=Agoric Cosmos daemon
 After=network-online.target
@@ -102,16 +98,16 @@ EOF
 # cat /etc/systemd/system/ag-chain-cosmos.service
 
 # start node and sync
-systemctl enable ag-chain-cosmos
-systemctl daemon-reload
-systemctl start ag-chain-cosmos
+sudo systemctl enable ag-chain-cosmos
+sudo systemctl daemon-reload
+sudo systemctl start ag-chain-cosmos
 
-echo "pausing 30s for the service to be fully started"
+echo "pausing 15s for the service to be fully started"
 sleep 15
 
 # confirm that the node is fully synced
 for (( ; ; )); do
-  sync_info=`sudo -u $USER -s "$HOME/go/bin/ag-cosmos-helper" status 2>&1 | jq .SyncInfo`
+  sync_info=`"$HOME/go/bin/ag-cosmos-helper" status 2>&1 | jq .SyncInfo`
   echo "$sync_info"
   if test `echo "$sync_info" | jq -r .catching_up` == false; then
     echo "Caught up"
