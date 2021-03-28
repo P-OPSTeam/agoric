@@ -5,7 +5,7 @@
 
 # usage
 # ./install-agoric.sh GIT_BRANCH MONIKER
-# ie ./install-agoric.sh @agoric/sdk@2.15.1 Test-moniker
+# ie ./install-agoric.sh @agoric/sdk@2.15.1 pops-moniker
 
 GIT_BRANCH=$1
 MONIKER=$2
@@ -57,16 +57,19 @@ cd packages/cosmic-swingset && make
 if [ $SUDO_USER ]; then USER=$SUDO_USER; else USER=`whoami`; fi
 
 # network configuration
-# Download the genesis file
-curl https://testnet.agoric.net/genesis.json > $HOME/.ag-chain-cosmos/config/genesis.json 
-# Reset the state of your validator.
-ag-chain-cosmos unsafe-reset-all
+# First, get the network config for the current network.
+curl https://testnet.agoric.net/network-config > chain.json
+# Set chain name to the correct value
 chainName=`jq -r .chainName < chain.json`
-
 # Confirm value: should be something like agorictest-N.
 echo $chainName
 
 $HOME/go/bin/ag-chain-cosmos init --chain-id $chainName ${MONIKER}
+
+# Download the genesis file
+curl https://testnet.agoric.net/genesis.json > $HOME/.ag-chain-cosmos/config/genesis.json 
+# Reset the state of your validator.
+$HOME/go/bin/ag-chain-cosmos unsafe-reset-all
 
 # fix configuration file
 # Set peers variable to the correct value
@@ -105,8 +108,8 @@ sudo systemctl enable ag-chain-cosmos
 sudo systemctl daemon-reload
 sudo systemctl start ag-chain-cosmos
 
-echo "pausing 15s for the service to be fully started"
-sleep 15
+echo "pausing 60s for the service to be fully started"
+sleep 60
 
 # confirm that the node is fully synced
 for (( ; ; )); do
