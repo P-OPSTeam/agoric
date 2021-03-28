@@ -4,8 +4,8 @@
 # it's used to install the agoric node on an ubuntu 18.04 on a newly build VPS
 
 # usage
-# sudo install-agoric.sh GIT_BRANCH MONIKER
-# ie sudo install-agoric.sh @agoric/sdk@2.15.1 Test-moniker
+# ./install-agoric.sh GIT_BRANCH MONIKER
+# ie ./install-agoric.sh @agoric/sdk@2.15.1 Test-moniker
 
 GIT_BRANCH=$1
 MONIKER=$2
@@ -57,7 +57,10 @@ cd packages/cosmic-swingset && make
 if [ $SUDO_USER ]; then USER=$SUDO_USER; else USER=`whoami`; fi
 
 # network configuration
-curl https://testnet.agoric.net/network-config > chain.json
+# Download the genesis file
+curl https://testnet.agoric.net/genesis.json > $HOME/.ag-chain-cosmos/config/genesis.json 
+# Reset the state of your validator.
+ag-chain-cosmos unsafe-reset-all
 chainName=`jq -r .chainName < chain.json`
 
 # Confirm value: should be something like agorictest-N.
