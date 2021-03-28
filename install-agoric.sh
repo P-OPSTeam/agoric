@@ -106,6 +106,9 @@ systemctl enable ag-chain-cosmos
 systemctl daemon-reload
 systemctl start ag-chain-cosmos
 
+echo "pausing 30s for the service to be fully started"
+sleep 15
+
 # confirm that the node is fully synced
 for (( ; ; )); do
   sync_info=`sudo -u $USER -s "$HOME/go/bin/ag-cosmos-helper" status 2>&1 | jq .SyncInfo`
