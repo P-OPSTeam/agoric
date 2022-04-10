@@ -5,33 +5,33 @@
 
 # usage
 # ./install-agoric.sh GIT_BRANCH MONIKER
-# ie ./install-agoric.sh @agoric/sdk@2.15.1 pops-moniker
+# ie ./install-agoric.sh agoric-upgrade-5 pops-moniker
 
 GIT_BRANCH=$1
 MONIKER=$2
 
-# install nodejs
-# Download the nodesource PPA for Node.js
-curl https://deb.nodesource.com/setup_12.x | sudo bash
-
-# Download the Yarn repository configuration
-# See instructions on https://legacy.yarnpkg.com/en/docs/install/
-curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | sudo apt-key add -
-echo "deb https://dl.yarnpkg.com/debian/ stable main" | sudo tee /etc/apt/sources.list.d/yarn.list
+if [[ -z "$GIT_BRANCH" || -z "$MONIKER" ]]; then
+  echo "
+  usage
+  # ./install-agoric.sh GIT_BRANCH MONIKER
+  # ie ./install-agoric.sh agoric-upgrade-5 pops-moniker
+  "
+  exit 1
+fi
 
 # Update Ubuntu
 sudo apt update
 sudo apt upgrade -y
 
 # make sure all tools used are installed
-sudo apt install -y curl git sed
+sudo apt install curl git sed jq -y
 
-# Install Node.js, Yarn, and build tools
-# Install jq for formatting of JSON data
-sudo apt install nodejs=12.* yarn build-essential jq -y
+# Install build tools
+sudo apt install build-essential -y
 
 # Install correct Go version
-curl https://dl.google.com/go/go1.15.7.linux-amd64.tar.gz | sudo tar -C/usr/local -zxvf -
+sudo rm -rf /usr/local/go
+curl https://dl.google.com/go/go1.17.7.linux-amd64.tar.gz | sudo tar -C /usr/local -xzf -
 
 # Update environment variables to include go
 cat <<'EOF' >>$HOME/.profile
@@ -40,36 +40,32 @@ export GOPATH=$HOME/go
 export GO111MODULE=on
 export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
 EOF
-source $HOME/.profile
+# shellcheck source=/dev/null
+source "$HOME/.profile"
 
 # install agoric
-git clone https://github.com/Agoric/agoric-sdk -b ${GIT_BRANCH}
-cd agoric-sdk
-
-# Install and build Agoric Javascript packages
-yarn install
-yarn build
-
-# Install and build Agoric Cosmos SDK support
-cd packages/cosmic-swingset && make
+git clone https://github.com/Agoric/ag0 -b "${GIT_BRANCH}"
+cd ag0 || exit 1
+make install
+mv /root/go/bin/ag0 /usr/local/bin/agd
 
 # find the non sudoer user
-if [ $SUDO_USER ]; then USER=$SUDO_USER; else USER=`whoami`; fi
+if [ "$SUDO_USER" ]; then USER=$SUDO_USER; else USER=$(whoami); fi
 
 # network configuration
 # First, get the network config for the current network.
-curl https://testnet.agoric.net/network-config > chain.json
+curl https://main.agoric.net/network-config > chain.json
 # Set chain name to the correct value
-chainName=`jq -r .chainName < chain.json`
-# Confirm value: should be something like agorictest-N.
-echo $chainName
+chainName=$(jq -r .chainName < chain.json)
+# Confirm value: should be something like agoric-N.
+echo "$chainName"
 
-$HOME/go/bin/ag-chain-cosmos init --chain-id $chainName ${MONIKER}
+agd init --chain-id ${chainName} ${MONIKER}
 
 # Download the genesis file
-curl https://testnet.agoric.net/genesis.json > $HOME/.ag-chain-cosmos/config/genesis.json 
+curl https://main.agoric.net/genesis.json > $HOME/.agoric/config/genesis.json 
 # Reset the state of your validator.
-$HOME/go/bin/ag-chain-cosmos unsafe-reset-all
+$HOME/go/bin/agd unsafe-reset-all
 
 # fix configuration file
 # Set peers variable to the correct value
@@ -79,43 +75,41 @@ seeds=$(jq '.seeds | join(",")' < chain.json)
 
 
 # Fix `Error: failed to parse log level`
-sed -i.bak 's/^log_level/# log_level/' $HOME/.ag-chain-cosmos/config/config.toml
+sed -i.bak 's/^log_level/# log_level/' $HOME/.agoric/config/config.toml
 # Replace the seeds and persistent_peers values
-sed -i.bak -e "s/^seeds *=.*/seeds = $seeds/; s/^persistent_peers *=.*/persistent_peers = $peers/" $HOME/.ag-chain-cosmos/config/config.toml
+sed -i.bak -e "s/^seeds *=.*/seeds = $seeds/; s/^persistent_peers *=.*/persistent_peers = $peers/" $HOME/.agoric/config/config.toml
 
 # create unit file
-sudo tee <<EOF >/dev/null /etc/systemd/system/ag-chain-cosmos.service
+sudo tee <<EOF >/dev/null /etc/systemd/system/agd.service
 [Unit]
 Description=Agoric Cosmos daemon
 After=network-online.target
-
 [Service]
 User=$USER
-ExecStart=$HOME/go/bin/ag-chain-cosmos start --log_level=warn
+ExecStart=/usr/local/bin/agd start --log_level=warn
 Restart=on-failure
 RestartSec=3
 LimitNOFILE=4096
-
 [Install]
 WantedBy=multi-user.target
 EOF
 
 # Check the contents of the file, especially User, Environment and ExecStart lines
-# cat /etc/systemd/system/ag-chain-cosmos.service
+# cat /etc/systemd/system/.agoric.service
 
 # start node and sync
-sudo systemctl enable ag-chain-cosmos
+sudo systemctl enable agd
 sudo systemctl daemon-reload
-sudo systemctl start ag-chain-cosmos
+sudo systemctl start agd
 
 echo "pausing 60s for the service to be fully started"
 sleep 60
 
 # confirm that the node is fully synced
 for (( ; ; )); do
-  sync_info=`"$HOME/go/bin/ag-cosmos-helper" status 2>&1 | jq .SyncInfo`
+  sync_info=$(/usr/local/bin/agd status 2>&1 | jq .SyncInfo)
   echo "$sync_info"
-  if test `echo "$sync_info" | jq -r .catching_up` == false; then
+  if test "$(echo "$sync_info" | jq -r .catching_up)" == false; then
     echo "Caught up"
     break
   fi
